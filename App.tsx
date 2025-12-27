@@ -5,10 +5,10 @@ import { analyzeResume } from './services/geminiService';
 import { GlassCard } from './components/GlassCard';
 import { MatchScoreArc } from './components/MatchScoreArc';
 import { extractTextFromFile } from './utils/fileUtils';
-import { 
-  Briefcase, 
-  Target, 
-  AlertCircle, 
+import {
+  Briefcase,
+  Target,
+  AlertCircle,
   ChevronRight,
   ArrowRight,
   Upload,
@@ -21,22 +21,22 @@ const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<AnalysisTab>(AnalysisTab.Overview);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Extraction States
   const [isExtractingResume, setIsExtractingResume] = useState(false);
   const [isExtractingJd, setIsExtractingJd] = useState(false);
-  
+
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  
+
   // Form State
   const [resumeText, setResumeText] = useState('');
   const [jdText, setJdText] = useState('');
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
   const [jdFileName, setJdFileName] = useState<string | null>(null);
-  
+
   const [isDraggingResume, setIsDraggingResume] = useState(false);
   const [isDraggingJd, setIsDraggingJd] = useState(false);
-  
+
   const resumeInputRef = useRef<HTMLInputElement>(null);
   const jdInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,13 +64,20 @@ const App: React.FC = () => {
     if (!resumeText || !jdText) return;
     setIsLoading(true);
     try {
+      console.log('Starting analysis...');
+      console.log('Resume text length:', resumeText.length);
+      console.log('JD text length:', jdText.length);
       const result = await analyzeResume(resumeText, jdText);
+      console.log('Analysis result:', result);
       setAnalysis(result);
       saveToHistory(result);
       setCurrentTab(AnalysisTab.Overview);
     } catch (error) {
-      console.error(error);
-      alert("Analysis failed. Please try again.");
+      console.error('Analysis error details:', error);
+      console.error('Error type:', error?.constructor?.name);
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      alert(`Analysis failed: ${error instanceof Error ? error.message : String(error)}. Please check the console for details.`);
     } finally {
       setIsLoading(false);
     }
@@ -145,8 +152,8 @@ const App: React.FC = () => {
       <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
         Step {type === 'resume' ? '1: Resume' : '2: Job Description'}
       </label>
-      
-      <div 
+
+      <div
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
@@ -160,17 +167,17 @@ const App: React.FC = () => {
           isDragging ? 'border-sky-400 bg-sky-50/30' : 'border-black/5 hover:border-black/10'
         }`}
       >
-        <input 
-          type="file" 
-          ref={inputRef} 
-          className="hidden" 
-          accept=".pdf,.docx,.txt" 
+        <input
+          type="file"
+          ref={inputRef}
+          className="hidden"
+          accept=".pdf,.docx,.txt"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file, type);
-          }} 
+          }}
         />
-        
+
         {isExtracting ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-5 h-5 border-2 border-slate-200 border-t-sky-500 rounded-full animate-spin" />
@@ -183,7 +190,7 @@ const App: React.FC = () => {
               <span className="text-[12px] font-medium text-slate-700 max-w-[200px] truncate">{fileName}</span>
               <span className="text-[10px] text-slate-400">Content loaded</span>
             </div>
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 if (type === 'resume') { setResumeFileName(null); setResumeText(''); }
@@ -210,7 +217,7 @@ const App: React.FC = () => {
       {(!fileName || fileName === 'manual') && !isExtracting && (
         <div className="pt-2">
           {fileName !== 'manual' ? (
-            <button 
+            <button
               onClick={() => type === 'resume' ? setResumeFileName('manual') : setJdFileName('manual')}
               className="text-[11px] text-sky-500 hover:text-sky-600 font-medium transition-colors"
             >
@@ -218,14 +225,14 @@ const App: React.FC = () => {
             </button>
           ) : (
             <div className="space-y-2 animate-in fade-in duration-300">
-              <textarea 
+              <textarea
                 className="w-full h-40 bg-white/40 border border-black/5 rounded-xl p-4 text-[13px] focus:ring-1 focus:ring-sky-500 outline-none transition-all resize-none placeholder:text-slate-300 mt-2"
                 placeholder={placeholder}
                 value={textValue}
                 onChange={(e) => setTextValue(e.target.value)}
                 autoFocus
               />
-              <button 
+              <button
                 onClick={() => type === 'resume' ? setResumeFileName(null) : setJdFileName(null)}
                 className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
               >
@@ -270,7 +277,7 @@ const App: React.FC = () => {
           "Paste the job description here..."
         )}
 
-        <button 
+        <button
           onClick={handleStartAnalysis}
           disabled={!resumeText || !jdText || isLoading || isExtractingResume || isExtractingJd}
           className="w-full py-3 bg-slate-900 text-white rounded-xl text-[13px] font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 group"
@@ -279,7 +286,7 @@ const App: React.FC = () => {
             <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           ) : (
             <>
-              Analyze Fit 
+              Analyze Fit
               <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
             </>
           )}
@@ -327,15 +334,15 @@ const App: React.FC = () => {
             </h2>
             <div className="flex items-center gap-2 mt-2">
               <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-sky-500 transition-all duration-1000" 
-                  style={{ width: analysis.identity.confidence }} 
+                <div
+                  className="h-full bg-sky-500 transition-all duration-1000"
+                  style={{ width: analysis.identity.confidence }}
                 />
               </div>
               <span className="text-[11px] text-slate-400">{analysis.identity.confidence} confidence</span>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-black/5">
             <div className="space-y-3">
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Strengths</p>
@@ -380,8 +387,8 @@ const App: React.FC = () => {
                     <span className="text-[11px] text-slate-400">{skill.match}%</span>
                   </div>
                   <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-sky-500 transition-all duration-1000" 
+                    <div
+                      className="h-full bg-sky-500 transition-all duration-1000"
                       style={{ width: `${skill.match}%` }}
                     />
                   </div>
@@ -440,9 +447,9 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
               <span className="text-[20px] font-semibold text-slate-900">{analysis.resumeInsights.focusScore}</span>
               <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-sky-500" 
-                  style={{ width: `${analysis.resumeInsights.focusScore}%` }} 
+                <div
+                  className="h-full bg-sky-500"
+                  style={{ width: `${analysis.resumeInsights.focusScore}%` }}
                 />
               </div>
             </div>
@@ -479,8 +486,8 @@ const App: React.FC = () => {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-500">
         {columns.map(col => (
-          <div 
-            key={col.id} 
+          <div
+            key={col.id}
             className="space-y-4 rounded-2xl p-2 transition-colors"
             onDragOver={onDragOver}
             onDrop={(e) => onDropTodo(e, col.id)}
@@ -493,9 +500,9 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-3 min-h-[400px]">
               {analysis.todos.filter(t => t.status === col.id).map(todo => (
-                <GlassCard 
-                  key={todo.id} 
-                  padding="p-4" 
+                <GlassCard
+                  key={todo.id}
+                  padding="p-4"
                   className={`relative cursor-grab active:cursor-grabbing hover:border-sky-200 transition-all ${
                     draggedTodoId === todo.id ? 'opacity-40 grayscale scale-95' : 'opacity-100'
                   }`}
@@ -509,7 +516,7 @@ const App: React.FC = () => {
                       <p className="text-[12px] text-slate-700 leading-snug">{todo.title}</p>
                       <div className="flex gap-2 justify-end">
                         {col.id !== 'to-fix' && (
-                          <button 
+                          <button
                             onClick={() => handleTodoMove(todo.id, col.id === 'done' ? 'in-progress' : 'to-fix')}
                             className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors"
                           >
@@ -517,7 +524,7 @@ const App: React.FC = () => {
                           </button>
                         )}
                         {col.id !== 'done' && (
-                          <button 
+                          <button
                             onClick={() => handleTodoMove(todo.id, col.id === 'to-fix' ? 'in-progress' : 'done')}
                             className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors"
                           >
@@ -546,8 +553,8 @@ const App: React.FC = () => {
       <GlassCard className="space-y-0 p-0 overflow-hidden">
         {history.length > 0 ? (
           history.map((item, idx) => (
-            <div 
-              key={item.id} 
+            <div
+              key={item.id}
               className={`flex items-center justify-between p-5 hover:bg-black/[0.01] transition-colors cursor-pointer ${
                 idx !== history.length - 1 ? 'border-b border-black/5' : ''
               }`}
@@ -584,9 +591,9 @@ const App: React.FC = () => {
           </div>
           <span className="text-[14px] font-semibold text-slate-900 tracking-tight">Resume Match</span>
         </div>
-        
+
         {analysis && (
-          <button 
+          <button
             onClick={() => {
               setAnalysis(null);
               setResumeText('');

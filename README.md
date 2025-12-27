@@ -10,7 +10,7 @@ The idea was to keep the experience simple and focused. Instead of overwhelming 
 
 ## Why This Project Was Built
 
-The motivation behind Resume Match comes from real job search frustration. Applicant Tracking Systems often scan resumes for relevance before a human ever sees them. Small differences in wording or missing keywords can significantly impact a candidate’s chances, even when they are qualified.
+The motivation behind Resume Match comes from real job search frustration. Applicant Tracking Systems often scan resumes for relevance before a human ever sees them. Small differences in wording or missing keywords can significantly impact a candidate's chances, even when they are qualified.
 
 This project exists to help bridge that gap. By comparing a resume directly with a job description, users can better understand where their resume is strong and where it may be lacking. The goal is to make resume optimization more transparent and less guess-based.
 
@@ -31,3 +31,39 @@ React is used to build the interface and manage application state in a clear and
 The codebase is organized to keep logic, components, and utilities clearly separated. Reusable components handle the interface, while helper functions and services manage data processing. This structure makes it easy to add new features or improve existing ones without introducing unnecessary complexity.
 
 The overall approach focuses on clarity, simplicity, and long-term usability rather than overengineering.
+
+## Setup
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Create a `.env` file in the root directory with your Gemini API key:
+```
+GEMINI_API_KEY=your_api_key_here
+```
+
+Get your API key from: https://aistudio.google.com/apikey
+
+3. Start the development server:
+```bash
+npm run dev
+```
+
+## Features
+
+- Resume and job description analysis
+- Match score calculation
+- Skill alignment analysis
+- Experience relevance feedback
+- Actionable improvement todos
+- Resume insights and red flags detection
+
+## Troubleshooting
+
+If you encounter "Analysis failed" errors:
+1. Check that your `.env` file exists and contains a valid `GEMINI_API_KEY`
+2. Check the browser console for detailed error messages
+3. Ensure your API key has access to Gemini models
+4. Verify that both resume and job description text are provided
