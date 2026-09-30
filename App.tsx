@@ -4,9 +4,10 @@ import { AnalysisTab, Session } from './types';
 import { AISettings, PROVIDERS, checkBuiltin, isProviderReady, loadSettings, saveSettings, setActiveSettings } from './services/ai';
 import { analyzeResume } from './services/analysis';
 import { localAnalysis } from './utils/ats';
+import { SAMPLE_JD, SAMPLE_RESUME } from './utils/sample';
 import { deleteSession, loadDraft, loadSessions, saveDraft, upsertSession } from './utils/storage';
 import { analysisToMarkdown, downloadText, slug } from './utils/export';
-import { AnalyzingSteps, Landing } from './components/Landing';
+import { AnalyzingSteps, Home, Landing } from './components/Landing';
 import { SettingsSheet } from './components/SettingsSheet';
 import { Sheet } from './components/Sheet';
 import { Button, scoreColor } from './components/ui';
@@ -30,7 +31,24 @@ const VIEWS: Record<AnalysisTab, React.FC<any>> = {
   [AnalysisTab.Plan]: Plan,
 };
 
+type Route = 'home' | 'analyze';
+const routeFromPath = (): Route => (window.location.pathname.startsWith('/analyze') ? 'analyze' : 'home');
+
 const App: React.FC = () => {
+  const [route, setRoute] = useState<Route>(routeFromPath);
+  const navigate = useCallback((to: Route) => {
+    const path = to === 'home' ? '/' : '/analyze';
+    if (window.location.pathname !== path) window.history.pushState(null, '', path);
+    setRoute(to);
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => setRoute(routeFromPath());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   const [settings, setSettings] = useState<AISettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -99,6 +117,7 @@ const App: React.FC = () => {
   };
 
   const openSession = (s: Session) => {
+    navigate('analyze');
     setSession(s);
     setResumeText(s.resumeText);
     setJdText(s.jdText);
@@ -115,7 +134,10 @@ const App: React.FC = () => {
       <header className="sticky top-0 z-40 h-11 bg-white/80 backdrop-blur-xl no-print">
         <div className="max-w-[1024px] mx-auto h-full px-4 flex items-center justify-between">
           <button
-            onClick={() => setSession(null)}
+            onClick={() => {
+              setSession(null);
+              navigate('home');
+            }}
             className="flex items-center gap-2 text-ink/80 hover:text-ink"
             aria-label="Resume Match home"
           >
@@ -134,7 +156,19 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {session && a && View ? (
+      {route === 'home' ? (
+        <Home
+          onStart={() => navigate('analyze')}
+          onSample={() => {
+            setSession(null);
+            setResumeText(SAMPLE_RESUME);
+            setResumeFileName('sample-resume.txt');
+            setJdText(SAMPLE_JD);
+            setJdFileName('sample-job.txt');
+            navigate('analyze');
+          }}
+        />
+      ) : session && a && View ? (
         <>
           {/* Product local navigation */}
           <div className="sticky top-11 z-30 bg-white/90 backdrop-blur-xl border-b border-hairline no-print">

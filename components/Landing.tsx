@@ -5,6 +5,7 @@ import { Button, Card, ErrorNote, Label } from './ui';
 const extractTextFromFile = async (f: File) => (await import('../utils/fileUtils')).extractTextFromFile(f);
 import { SAMPLE_JD, SAMPLE_RESUME } from '../utils/sample';
 import { ANALYSIS_STEPS } from '../services/analysis';
+import { DemoLoop } from './DemoLoop';
 
 interface Props {
   resumeText: string;
@@ -24,127 +25,144 @@ interface Props {
 }
 
 
+const HIGHLIGHTS = [
+  { icon: ScanSearch, t: 'Match & ATS scan', d: 'A calibrated fit score, section scores, and an offline keyword scan like the ones recruiters run.' },
+  { icon: PenLine, t: 'Tailored rewrite', d: 'A full resume rewritten for this job, plus a bullet rewriter with four styles.' },
+  { icon: FileText, t: 'Cover letter & more', d: 'Cover letters by tone and length, LinkedIn profile, recruiter outreach and thank-you notes.' },
+  { icon: Mic, t: 'Interview prep', d: 'The questions you are most likely to get, with answer outlines. Practice and get graded.' },
+  { icon: MessageSquare, t: 'Career coach', d: 'Chat with an AI that has read your resume, the job, and the analysis.' },
+  { icon: ListChecks, t: 'Action plan', d: 'Prioritized fixes on a board. One tap has the AI draft each fix for you.' },
+];
+
+/** Marketing home page: hero, looping demo, highlights. Uploading happens on the separate /analyze page. */
+export const Home: React.FC<{ onStart: () => void; onSample: () => void }> = ({ onStart, onSample }) => (
+  <>
+    {/* Hero */}
+    <section className="bg-white pt-14 sm:pt-20 pb-12 px-4 text-center">
+      <p className="t-small font-semibold text-launch animate-fade-up">Resume Match</p>
+      <h1 className="t-hero text-ink mt-3 max-w-3xl text-balance mx-auto animate-fade-up" style={{ animationDelay: '60ms' }}>
+        Your resume, matched to the job.
+      </h1>
+      <p className="t-body text-slate mt-4 max-w-xl mx-auto animate-fade-up" style={{ animationDelay: '120ms' }}>
+        An AI recruiter reads both, scores the fit, rewrites your weakest lines, and prepares you for the interview.
+      </p>
+      <div className="flex items-center justify-center gap-6 mt-7 animate-fade-up" style={{ animationDelay: '180ms' }}>
+        <Button size="lg" onClick={onStart}>
+          Start now
+        </Button>
+        <button className="t-body text-link hover:underline" onClick={onSample}>
+          Try a sample ›
+        </button>
+      </div>
+    </section>
+
+    {/* Looping demo */}
+    <section className="bg-white px-4 pb-20 animate-fade-up" style={{ animationDelay: '240ms' }}>
+      <DemoLoop />
+    </section>
+
+    {/* Highlights */}
+    <section className="bg-mist py-20 px-4">
+      <div className="max-w-5xl mx-auto">
+        <h2 className="t-heading mb-12">Everything after the upload.</h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {HIGHLIGHTS.map(({ icon: Icon, t, d }) => (
+            <div key={t} className="bg-white rounded-[28px] p-7">
+              <Icon size={22} strokeWidth={1.6} className="text-ink" />
+              <p className="text-[19px] font-semibold tracking-[0.2px] font-[family-name:var(--font-display)] mt-5">{t}</p>
+              <p className="t-small text-slate mt-2">{d}</p>
+            </div>
+          ))}
+        </div>
+        <div className="text-center mt-14">
+          <Button size="lg" onClick={onStart}>
+            Start now
+          </Button>
+        </div>
+      </div>
+    </section>
+  </>
+);
+
+/** The upload page: resume + job inputs and the analyze button. */
 export const Landing: React.FC<Props> = props => {
   const { resumeText, jdText, onAnalyze, analyzing, error } = props;
   const ready = resumeText.trim().length > 50 && jdText.trim().length > 50;
 
   return (
-    <>
-      {/* Hero */}
-      <section className="bg-white pt-20 sm:pt-28 pb-16 px-4 text-center">
-        <p className="t-kicker text-ink animate-fade-up">Resume Match</p>
-        <h1 className="t-hero text-ink mt-4 max-w-4xl mx-auto animate-fade-up" style={{ animationDelay: '60ms' }}>
-          Your resume.
-          <br />
-          Matched to the job.
-        </h1>
-        <p className="t-kicker font-normal text-slate mt-6 max-w-2xl mx-auto animate-fade-up" style={{ animationDelay: '120ms' }}>
-          An AI recruiter reads both, scores the fit, rewrites your weakest lines, and prepares you for the interview.
-        </p>
-        <div className="flex items-center justify-center gap-6 mt-8 animate-fade-up" style={{ animationDelay: '180ms' }}>
-          <Button size="lg" onClick={() => document.getElementById('start')?.scrollIntoView({ behavior: 'smooth' })}>
-            Get started
-          </Button>
-          <button
-            className="t-body text-link hover:underline"
-            onClick={() => {
-              props.setResume(SAMPLE_RESUME, 'sample-resume.txt');
-              props.setJd(SAMPLE_JD, 'sample-job.txt');
-              setTimeout(() => document.getElementById('start')?.scrollIntoView({ behavior: 'smooth' }), 50);
-            }}
-          >
-            Try a sample ›
-          </button>
-        </div>
-      </section>
-
-      {/* Upload stage */}
-      <section id="start" className="bg-mist py-20 px-4 scroll-mt-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="t-heading">Two documents. One clear answer.</h2>
-            <p className="t-body text-slate mt-3">
-              Upload a PDF, DOCX or TXT, or paste text.{' '}
-              {props.aiReady ? (
-                <>
-                  Analysis runs on{' '}
-                  <button className="text-link hover:underline" onClick={props.onOpenSettings}>
-                    {props.providerName}
-                  </button>
-                  .
-                </>
-              ) : (
+    <section className="bg-mist min-h-[calc(100vh-44px)] pt-12 sm:pt-16 pb-20 px-4">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center mb-10">
+          <h1 className="t-heading">Two documents. One clear answer.</h1>
+          <p className="t-body text-slate mt-3">
+            Upload a PDF, DOCX or TXT, or paste text.{' '}
+            {props.aiReady ? (
+              <>
+                Analysis runs on{' '}
                 <button className="text-link hover:underline" onClick={props.onOpenSettings}>
-                  Connect a free AI provider ›
+                  {props.providerName}
                 </button>
-              )}
+                .
+              </>
+            ) : (
+              <button className="text-link hover:underline" onClick={props.onOpenSettings}>
+                Connect a free AI provider ›
+              </button>
+            )}
+          </p>
+          {!resumeText && !jdText && (
+            <button
+              className="t-small text-link hover:underline mt-2"
+              onClick={() => {
+                props.setResume(SAMPLE_RESUME, 'sample-resume.txt');
+                props.setJd(SAMPLE_JD, 'sample-job.txt');
+              }}
+            >
+              Fill in a sample ›
+            </button>
+          )}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-5">
+          <DocInput
+            step="1"
+            title="Your resume"
+            text={resumeText}
+            fileName={props.resumeFileName}
+            onChange={props.setResume}
+            placeholder="Paste your resume here…"
+          />
+          <DocInput
+            step="2"
+            title="The job"
+            text={jdText}
+            fileName={props.jdFileName}
+            onChange={props.setJd}
+            placeholder="Paste the full job posting here…"
+          />
+        </div>
+
+        <div className="mt-10 flex flex-col items-center gap-5">
+          {analyzing ? <AnalyzingSteps step={props.step} /> : (
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <Button size="lg" onClick={onAnalyze} disabled={!ready} icon={<Sparkles size={16} />}>
+                {props.aiReady ? 'Analyze fit' : 'Set up AI & analyze'}
+              </Button>
+              <Button size="lg" variant="outline" onClick={props.onQuickScan} disabled={!ready}>
+                Quick scan, no AI
+              </Button>
+            </div>
+          )}
+          {!ready && !analyzing && <p className="t-caption text-slate">Add both documents to continue.</p>}
+          {ready && !analyzing && !props.aiReady && (
+            <p className="t-caption text-slate text-center max-w-md">
+              AI features need a free key from Google Gemini, Groq, OpenRouter or Pollinations. It takes about a minute.
             </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-5">
-            <DocInput
-              step="1"
-              title="Your resume"
-              text={resumeText}
-              fileName={props.resumeFileName}
-              onChange={props.setResume}
-              placeholder="Paste your resume here…"
-            />
-            <DocInput
-              step="2"
-              title="The job"
-              text={jdText}
-              fileName={props.jdFileName}
-              onChange={props.setJd}
-              placeholder="Paste the full job posting here…"
-            />
-          </div>
-
-          <div className="mt-10 flex flex-col items-center gap-5">
-            {analyzing ? <AnalyzingSteps step={props.step} /> : (
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <Button size="lg" onClick={onAnalyze} disabled={!ready} icon={<Sparkles size={16} />}>
-                  {props.aiReady ? 'Analyze fit' : 'Set up AI & analyze'}
-                </Button>
-                <Button size="lg" variant="outline" onClick={props.onQuickScan} disabled={!ready}>
-                  Quick scan, no AI
-                </Button>
-              </div>
-            )}
-            {!ready && !analyzing && <p className="t-caption text-slate">Add both documents to continue.</p>}
-            {ready && !analyzing && !props.aiReady && (
-              <p className="t-caption text-slate text-center max-w-md">
-                AI features need a free key from Google Gemini, Groq, OpenRouter or Pollinations. It takes about a minute.
-              </p>
-            )}
-            {error && <div className="w-full max-w-2xl"><ErrorNote message={error} onRetry={onAnalyze} /></div>}
-          </div>
+          )}
+          {error && <div className="w-full max-w-2xl"><ErrorNote message={error} onRetry={onAnalyze} /></div>}
         </div>
-      </section>
-
-      {/* Highlights */}
-      <section className="bg-white py-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="t-heading mb-12">Everything after the upload.</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              { icon: ScanSearch, t: 'Match & ATS scan', d: 'A calibrated fit score, section scores, and an offline keyword scan like the ones recruiters run.' },
-              { icon: PenLine, t: 'Tailored rewrite', d: 'A full resume rewritten for this job, plus a bullet rewriter with four styles.' },
-              { icon: FileText, t: 'Cover letter & more', d: 'Cover letters by tone and length, LinkedIn profile, recruiter outreach and thank-you notes.' },
-              { icon: Mic, t: 'Interview prep', d: 'The questions you are most likely to get, with answer outlines. Practice and get graded.' },
-              { icon: MessageSquare, t: 'Career coach', d: 'Chat with an AI that has read your resume, the job, and the analysis.' },
-              { icon: ListChecks, t: 'Action plan', d: 'Prioritized fixes on a board. One tap has the AI draft each fix for you.' },
-            ].map(({ icon: Icon, t, d }) => (
-              <div key={t} className="bg-mist rounded-[28px] p-7">
-                <Icon size={22} strokeWidth={1.6} className="text-ink" />
-                <p className="text-[19px] font-semibold tracking-[0.2px] font-[family-name:var(--font-display)] mt-5">{t}</p>
-                <p className="t-small text-slate mt-2">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
+      </div>
+    </section>
   );
 };
 

@@ -98,21 +98,60 @@ export const saveSettings = (s: AISettings) => {
 
 const keyFor = (s: AISettings, id: ProviderId) => (s.keys[id] || '').trim();
 
-/** null until checked; false when the server has no key configured. */
-let builtinAvailable: boolean | null = null;
+/** null until checked; false when the server has no key configured (built-in AI then uses the keyless fallback). */
+let serverKeyConfigured: boolean | null = null;
 
 export async function checkBuiltin(): Promise<boolean> {
   try {
     const res = await fetch('/api/ai', { method: 'GET' });
-    builtinAvailable = res.ok && !!(await res.json())?.configured;
+    serverKeyConfigured = res.ok && !!(await res.json())?.configured;
   } catch {
-    builtinAvailable = false;
+    serverKeyConfigured = false;
   }
-  return builtinAvailable;
+  return serverKeyConfigured;
 }
 
+// Built-in AI is always usable: with no server key it calls the keyless endpoint from the browser.
 export const isProviderReady = (s: AISettings, id: ProviderId = s.provider) =>
-  id === 'builtin' ? builtinAvailable !== false : !PROVIDERS[id].needsKey || keyFor(s, id).length > 0;
+  id === 'builtin' || !PROVIDERS[id].needsKey || keyFor(s, id).length > 0;
+
+/**
+ * Keyless fallback for the built-in AI. Called from the visitor's browser so each visitor
+ * uses their own anonymous quota. The endpoint handles one request at a time, so calls are queued.
+ */
+const KEYLESS_ENDPOINT = 'https://text.pollinations.ai/openai';
+let keylessQueue: Promise<unknown> = Promise.resolve();
+
+function keylessComplete(messages: ChatTurn[], opts: CompleteOptions): Promise<string> {
+  const run = keylessQueue.then(async () => {
+    let status = 0;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await sleep(2500 * attempt);
+      if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      // JSON mode makes this endpoint return "{}", so rely on the prompt asking for JSON instead.
+      const res = await fetch(KEYLESS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'openai', messages, temperature: opts.temperature ?? (opts.json ? 0.3 : 0.7), private: true }),
+        signal: opts.signal,
+      });
+      status = res.status;
+      if (!res.ok) continue;
+      const text: string = (await res.json().catch(() => null))?.choices?.[0]?.message?.content ?? '';
+      if (text.trim()) {
+        opts.onToken?.(text, text);
+        return text;
+      }
+    }
+    throw new Error(
+      status === 402 || status === 429
+        ? 'The free built-in AI has hit its limit for now. Try again later, or add your own free key in Settings.'
+        : 'The built-in AI is busy right now. Try again in a minute, or add your own free key in Settings.'
+    );
+  });
+  keylessQueue = run.catch(() => undefined);
+  return run;
+}
 
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant';
@@ -138,6 +177,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function callProvider(id: ProviderId, messages: ChatTurn[], opts: CompleteOptions): Promise<string> {
   const p = PROVIDERS[id];
+  if (id === 'builtin' && serverKeyConfigured === false) return keylessComplete(messages, opts);
   const key = keyFor(settingsRef, id);
   if (p.needsKey && !key) throw new Error(`${p.name} needs an API key. Add one in Settings.`);
 
@@ -197,14 +237,17 @@ async function callProvider(id: ProviderId, messages: ChatTurn[], opts: Complete
       if (!trimmed.startsWith('data:')) continue;
       const payload = trimmed.slice(5).trim();
       if (payload === '[DONE]') continue;
+      let chunk: any;
       try {
-        const delta: string = JSON.parse(payload)?.choices?.[0]?.delta?.content ?? '';
-        if (delta) {
-          full += delta;
-          opts.onToken(delta, full);
-        }
+        chunk = JSON.parse(payload);
       } catch {
-        /* partial / keepalive line */
+        continue; // partial / keepalive line
+      }
+      if (chunk?.error) throw new Error(`${p.name} error: ${chunk.error.message || 'the model failed'}. Try again in a minute.`);
+      const delta: string = chunk?.choices?.[0]?.delta?.content ?? '';
+      if (delta) {
+        full += delta;
+        opts.onToken(delta, full);
       }
     }
   }

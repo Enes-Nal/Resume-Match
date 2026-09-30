@@ -57,7 +57,7 @@ The site calls its own `/api/ai` endpoint, which forwards to OpenRouter using a 
 2. Local: put `OPENROUTER_API_KEY=...` in `.env` and restart `npm run dev`.
 3. Vercel: Project → Settings → Environment Variables → add `OPENROUTER_API_KEY`, then redeploy.
 
-By default it uses free models (`qwen/qwen3.8-27b:free`, then `google/gemma-4-31b-it:free`, then `openrouter/free`). Free models on OpenRouter are limited to about 50 requests per day per account, or about 1000 per day once the account has bought at least $10 of credits. One analysis uses 4 requests. For more headroom, set `OPENROUTER_MODELS` to a paid model; see `.env.example`.
+By default it uses six free models (Nemotron 3 Super, Dots 3, Nemotron 3 Ultra, Qwen 3.8, Gemma 4), tried three at a time, with reasoning turned off for speed. Free models are often rate-limited, so the proxy moves to the next group when one fails. Free models on OpenRouter are limited to about 50 requests per day per account, or about 1000 per day once the account has bought at least $10 of credits. One analysis uses 4 requests. For more headroom, set `OPENROUTER_MODELS` to a paid model; see `.env.example`.
 
 The proxy only accepts requests from the site's own origin, rate limits each visitor IP, caps output tokens and ignores any model the browser asks for.
 

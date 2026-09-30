@@ -58,7 +58,7 @@ export const SettingsSheet: React.FC<Props> = ({ open, onClose, settings, onChan
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[15px] font-semibold tracking-[-0.24px]">{info.name}</span>
-                    {id === 'builtin' && <span className="t-label">{isProviderReady(settings, 'builtin') ? 'Default' : 'Not configured on this server'}</span>}
+                    {id === 'builtin' && <span className="t-label">{isProviderReady(settings, 'builtin') ? 'Default' : 'Unavailable'}</span>}
                     {id !== settings.provider && isProviderReady(settings, id) && <span className="t-caption text-good">Key added</span>}
                   </div>
                   <p className="t-caption text-slate mt-0.5">{info.blurb}</p>
