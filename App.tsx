@@ -1,627 +1,280 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { Clock, Download, FileText, Settings2, Trash2 } from 'lucide-react';
+import { AnalysisTab, Session } from './types';
+import { AISettings, PROVIDERS, checkBuiltin, isProviderReady, loadSettings, saveSettings, setActiveSettings } from './services/ai';
+import { analyzeResume } from './services/analysis';
+import { localAnalysis } from './utils/ats';
+import { deleteSession, loadDraft, loadSessions, saveDraft, upsertSession } from './utils/storage';
+import { analysisToMarkdown, downloadText, slug } from './utils/export';
+import { AnalyzingSteps, Landing } from './components/Landing';
+import { SettingsSheet } from './components/SettingsSheet';
+import { Sheet } from './components/Sheet';
+import { Button, scoreColor } from './components/ui';
+import { Overview } from './views/Overview';
+import { Keywords } from './views/Keywords';
+import { Insights } from './views/Insights';
+import { Editor } from './views/Editor';
+import { CoverLetter } from './views/CoverLetter';
+import { Interview } from './views/Interview';
+import { Coach } from './views/Coach';
+import { Plan } from './views/Plan';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AnalysisTab, AnalysisResult, Todo, TodoStatus, HistoryItem } from './types';
-import { analyzeResume } from './services/geminiService';
-import { GlassCard } from './components/GlassCard';
-import { MatchScoreArc } from './components/MatchScoreArc';
-import { extractTextFromFile } from './utils/fileUtils';
-import {
-  Briefcase,
-  Target,
-  AlertCircle,
-  ChevronRight,
-  ArrowRight,
-  Upload,
-  FileText,
-  X,
-  GripVertical
-} from 'lucide-react';
+const VIEWS: Record<AnalysisTab, React.FC<any>> = {
+  [AnalysisTab.Overview]: Overview,
+  [AnalysisTab.Keywords]: Keywords,
+  [AnalysisTab.Insights]: Insights,
+  [AnalysisTab.Editor]: Editor,
+  [AnalysisTab.CoverLetter]: CoverLetter,
+  [AnalysisTab.Interview]: Interview,
+  [AnalysisTab.Coach]: Coach,
+  [AnalysisTab.Plan]: Plan,
+};
 
 const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<AnalysisTab>(AnalysisTab.Overview);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<AISettings>(loadSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
-  // Extraction States
-  const [isExtractingResume, setIsExtractingResume] = useState(false);
-  const [isExtractingJd, setIsExtractingJd] = useState(false);
+  const draft = loadDraft();
+  const [resumeText, setResumeText] = useState(draft?.resumeText || '');
+  const [jdText, setJdText] = useState(draft?.jdText || '');
+  const [resumeFileName, setResumeFileName] = useState<string | null>(draft?.resumeFileName || null);
+  const [jdFileName, setJdFileName] = useState<string | null>(draft?.jdFileName || null);
 
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-
-  // Form State
-  const [resumeText, setResumeText] = useState('');
-  const [jdText, setJdText] = useState('');
-  const [resumeFileName, setResumeFileName] = useState<string | null>(null);
-  const [jdFileName, setJdFileName] = useState<string | null>(null);
-
-  const [isDraggingResume, setIsDraggingResume] = useState(false);
-  const [isDraggingJd, setIsDraggingJd] = useState(false);
-
-  const resumeInputRef = useRef<HTMLInputElement>(null);
-  const jdInputRef = useRef<HTMLInputElement>(null);
-
-  // Kanban Drag State
-  const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Session[]>(loadSessions);
+  const [session, setSession] = useState<Session | null>(null);
+  const [tab, setTab] = useState<AnalysisTab>(AnalysisTab.Overview);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [step, setStep] = useState(0);
+  const [, setBuiltinChecked] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('resume_match_history');
-    if (saved) setHistory(JSON.parse(saved));
+    // Learn whether the server has the built-in AI key configured; re-render so readiness updates.
+    checkBuiltin().then(() => setBuiltinChecked(n => n + 1));
   }, []);
 
-  const saveToHistory = useCallback((res: AnalysisResult) => {
-    const newItem: HistoryItem = {
-      id: res.id,
-      jobTitle: res.jobTitle,
-      date: new Date(res.timestamp).toLocaleDateString(),
-      score: res.matchScore
-    };
-    const updated = [newItem, ...history].slice(0, 10);
-    setHistory(updated);
-    localStorage.setItem('resume_match_history', JSON.stringify(updated));
-  }, [history]);
+  useEffect(() => {
+    setActiveSettings(settings);
+    saveSettings(settings);
+  }, [settings]);
 
-  const handleStartAnalysis = async () => {
-    if (!resumeText || !jdText) return;
-    setIsLoading(true);
+  useEffect(() => {
+    saveDraft({ resumeText, jdText, resumeFileName, jdFileName });
+  }, [resumeText, jdText, resumeFileName, jdFileName]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [tab, session?.id]);
+
+  const update = useCallback((patch: Partial<Session>) => {
+    setSession(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      setSessions(upsertSession(next));
+      return next;
+    });
+  }, []);
+
+  const analyze = async (offline = false, docs = { resumeText, jdText }) => {
+    if (!offline && !isProviderReady(settings)) {
+      setSettingsOpen(true);
+      return;
+    }
+    setAnalyzing(!offline);
+    setStep(0);
+    setError(null);
     try {
-      console.log('Starting analysis...');
-      console.log('Resume text length:', resumeText.length);
-      console.log('JD text length:', jdText.length);
-      const result = await analyzeResume(resumeText, jdText);
-      console.log('Analysis result:', result);
-      setAnalysis(result);
-      saveToHistory(result);
-      setCurrentTab(AnalysisTab.Overview);
-    } catch (error) {
-      console.error('Analysis error details:', error);
-      console.error('Error type:', error?.constructor?.name);
-      console.error('Error message:', error instanceof Error ? error.message : String(error));
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-      alert(`Analysis failed: ${error instanceof Error ? error.message : String(error)}. Please check the console for details.`);
+      const analysis = offline ? localAnalysis(docs.resumeText, docs.jdText) : await analyzeResume(docs.resumeText, docs.jdText, setStep);
+      const s: Session = { id: analysis.id, createdAt: analysis.timestamp, resumeText: docs.resumeText, jdText: docs.jdText, analysis };
+      setSessions(upsertSession(s));
+      setSession(s);
+      setTab(AnalysisTab.Overview);
+    } catch (e) {
+      console.error(e);
+      setError((e as Error).message || 'Analysis failed.');
     } finally {
-      setIsLoading(false);
+      setAnalyzing(false);
     }
   };
 
-  const handleFile = async (file: File, type: 'resume' | 'jd') => {
-    if (type === 'resume') {
-      setIsExtractingResume(true);
-      setResumeFileName(file.name);
-    } else {
-      setIsExtractingJd(true);
-      setJdFileName(file.name);
-    }
-
-    try {
-      const text = await extractTextFromFile(file);
-      if (type === 'resume') {
-        setResumeText(text);
-      } else {
-        setJdText(text);
-      }
-    } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to extract text from file.");
-      if (type === 'resume') setResumeFileName(null);
-      else setJdFileName(null);
-    } finally {
-      if (type === 'resume') setIsExtractingResume(false);
-      else setIsExtractingJd(false);
-    }
+  const openSession = (s: Session) => {
+    setSession(s);
+    setResumeText(s.resumeText);
+    setJdText(s.jdText);
+    setTab(AnalysisTab.Overview);
+    setHistoryOpen(false);
   };
 
-  const handleTodoMove = (todoId: string, newStatus: TodoStatus) => {
-    if (!analysis) return;
-    const updatedTodos = analysis.todos.map(t => t.id === todoId ? { ...t, status: newStatus } : t);
-    setAnalysis({ ...analysis, todos: updatedTodos });
-  };
-
-  // Kanban DnD Handlers
-  const onDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedTodoId(id);
-    e.dataTransfer.setData('todoId', id);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const onDropTodo = (e: React.DragEvent, targetStatus: TodoStatus) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData('todoId');
-    if (id) {
-      handleTodoMove(id, targetStatus);
-    }
-    setDraggedTodoId(null);
-  };
-
-  const renderUploadZone = (
-    type: 'resume' | 'jd',
-    fileName: string | null,
-    isExtracting: boolean,
-    isDragging: boolean,
-    setIsDragging: (val: boolean) => void,
-    inputRef: React.RefObject<HTMLInputElement>,
-    textValue: string,
-    setTextValue: (val: string) => void,
-    placeholder: string
-  ) => (
-    <div className="space-y-2">
-      <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-        Step {type === 'resume' ? '1: Resume' : '2: Job Description'}
-      </label>
-
-      <div
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-          const file = e.dataTransfer.files[0];
-          if (file) handleFile(file, type);
-        }}
-        className={`relative group cursor-pointer border-2 border-dashed rounded-xl transition-all duration-300 min-h-[140px] flex flex-col items-center justify-center p-6 bg-white/30 hover:bg-white/50 ${
-          isDragging ? 'border-sky-400 bg-sky-50/30' : 'border-black/5 hover:border-black/10'
-        }`}
-      >
-        <input
-          type="file"
-          ref={inputRef}
-          className="hidden"
-          accept=".pdf,.docx,.txt"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFile(file, type);
-          }}
-        />
-
-        {isExtracting ? (
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-5 h-5 border-2 border-slate-200 border-t-sky-500 rounded-full animate-spin" />
-            <span className="text-[12px] text-slate-500 font-medium">Extracting text...</span>
-          </div>
-        ) : fileName && fileName !== 'manual' ? (
-          <div className="flex items-center gap-3 bg-white/60 px-4 py-2 rounded-lg border border-black/5 animate-in zoom-in-95 duration-200">
-            <FileText size={16} className="text-sky-500" />
-            <div className="flex flex-col">
-              <span className="text-[12px] font-medium text-slate-700 max-w-[200px] truncate">{fileName}</span>
-              <span className="text-[10px] text-slate-400">Content loaded</span>
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (type === 'resume') { setResumeFileName(null); setResumeText(''); }
-                else { setJdFileName(null); setJdText(''); }
-              }}
-              className="ml-2 p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center text-center space-y-2">
-            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:text-sky-500 group-hover:bg-sky-50 transition-colors">
-              <Upload size={18} />
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-[13px] font-medium text-slate-600">Drop file here or click to upload</p>
-              <p className="text-[11px] text-slate-400">Supports PDF, DOCX, and TXT</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {(!fileName || fileName === 'manual') && !isExtracting && (
-        <div className="pt-2">
-          {fileName !== 'manual' ? (
-            <button
-              onClick={() => type === 'resume' ? setResumeFileName('manual') : setJdFileName('manual')}
-              className="text-[11px] text-sky-500 hover:text-sky-600 font-medium transition-colors"
-            >
-              Or paste text manually
-            </button>
-          ) : (
-            <div className="space-y-2 animate-in fade-in duration-300">
-              <textarea
-                className="w-full h-40 bg-white/40 border border-black/5 rounded-xl p-4 text-[13px] focus:ring-1 focus:ring-sky-500 outline-none transition-all resize-none placeholder:text-slate-300 mt-2"
-                placeholder={placeholder}
-                value={textValue}
-                onChange={(e) => setTextValue(e.target.value)}
-                autoFocus
-              />
-              <button
-                onClick={() => type === 'resume' ? setResumeFileName(null) : setJdFileName(null)}
-                className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                Switch back to file upload
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
-  const renderLanding = () => (
-    <div className="max-w-xl mx-auto mt-12 mb-20 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Resume Match</h1>
-        <p className="text-slate-500 text-[13px]">Clarity over noise. High-precision alignment for your next role.</p>
-      </div>
-
-      <GlassCard className="space-y-6">
-        {renderUploadZone(
-          'resume',
-          resumeFileName,
-          isExtractingResume,
-          isDraggingResume,
-          setIsDraggingResume,
-          resumeInputRef,
-          resumeText,
-          setResumeText,
-          "Paste your resume contents here..."
-        )}
-
-        {renderUploadZone(
-          'jd',
-          jdFileName,
-          isExtractingJd,
-          isDraggingJd,
-          setIsDraggingJd,
-          jdInputRef,
-          jdText,
-          setJdText,
-          "Paste the job description here..."
-        )}
-
-        <button
-          onClick={handleStartAnalysis}
-          disabled={!resumeText || !jdText || isLoading || isExtractingResume || isExtractingJd}
-          className="w-full py-3 bg-slate-900 text-white rounded-xl text-[13px] font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 group"
-        >
-          {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-          ) : (
-            <>
-              Analyze Fit
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </>
-          )}
-        </button>
-      </GlassCard>
-    </div>
-  );
-
-  const renderTabs = () => (
-    <div className="flex items-center justify-center gap-8 border-b border-black/5 mb-8 overflow-x-auto no-scrollbar py-2">
-      {Object.values(AnalysisTab).map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setCurrentTab(tab)}
-          className={`text-[12px] font-medium px-2 py-2 whitespace-nowrap transition-all relative ${
-            currentTab === tab ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          {tab}
-          {currentTab === tab && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-sky-500 animate-in fade-in slide-in-from-bottom-1" />
-          )}
-        </button>
-      ))}
-    </div>
-  );
-
-  const renderOverview = () => {
-    if (!analysis) return null;
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 animate-in fade-in duration-500">
-        <GlassCard className="md:col-span-4 flex flex-col items-center justify-center text-center space-y-4">
-          <MatchScoreArc score={analysis.matchScore} />
-          <div className="space-y-1">
-            <h3 className="text-[14px] font-semibold text-slate-900">Role match</h3>
-            <p className="text-[12px] text-slate-500">Based on your profile alignment</p>
-          </div>
-        </GlassCard>
-
-        <GlassCard className="md:col-span-8 flex flex-col justify-center space-y-4">
-          <div className="space-y-1">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Identity Summary</p>
-            <h2 className="text-[16px] font-medium text-slate-900">
-              You present as <span className="text-sky-600 font-semibold">{analysis.identity.role}</span>
-            </h2>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-sky-500 transition-all duration-1000"
-                  style={{ width: analysis.identity.confidence }}
-                />
-              </div>
-              <span className="text-[11px] text-slate-400">{analysis.identity.confidence} confidence</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-black/5">
-            <div className="space-y-3">
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Strengths</p>
-              <ul className="space-y-2">
-                {analysis.signals.strengths.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[12px] text-slate-600">
-                    <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-3">
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Concerns</p>
-              <ul className="space-y-2">
-                {analysis.signals.concerns.map((c, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[12px] text-slate-600">
-                    <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </GlassCard>
-      </div>
-    );
-  };
-
-  const renderMatchAnalysis = () => {
-    if (!analysis) return null;
-    return (
-      <div className="space-y-6 animate-in fade-in duration-500">
-        <GlassCard className="space-y-6">
-          <div>
-            <h3 className="text-[14px] font-semibold text-slate-900 mb-4">Skill Alignment</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-6">
-              {analysis.skillAlignment.map((skill, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="flex justify-between items-end">
-                    <span className="text-[12px] font-medium text-slate-700">{skill.skill}</span>
-                    <span className="text-[11px] text-slate-400">{skill.match}%</span>
-                  </div>
-                  <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-sky-500 transition-all duration-1000"
-                      style={{ width: `${skill.match}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-black/5">
-            <h3 className="text-[14px] font-semibold text-slate-900 mb-4">Experience Relevance</h3>
-            <div className="space-y-4">
-              {analysis.experienceRelevance.map((exp, i) => (
-                <div key={i} className="flex gap-4 p-3 rounded-xl bg-black/[0.02] border border-black/[0.02]">
-                  <div className="mt-1">
-                    <Target size={14} className="text-slate-400" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[13px] font-medium text-slate-800">{exp.item}</p>
-                    <p className="text-[12px] text-slate-500 leading-relaxed">{exp.feedback}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-black/5">
-            <h3 className="text-[14px] font-semibold text-slate-900 mb-4">Missing Signals</h3>
-            <div className="flex flex-wrap gap-2">
-              {analysis.missingSignals.map((sig, i) => (
-                <span key={i} className="px-3 py-1 rounded-full bg-slate-100 text-[11px] text-slate-500 border border-slate-200">
-                  {sig}
-                </span>
-              ))}
-            </div>
-          </div>
-        </GlassCard>
-      </div>
-    );
-  };
-
-  const renderResumeInsights = () => {
-    if (!analysis) return null;
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
-        <GlassCard className="space-y-6">
-          <div className="space-y-1">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Identity Coherence</p>
-            <p className="text-[13px] text-slate-600 leading-relaxed">{analysis.resumeInsights.coherence}</p>
-          </div>
-          <div className="space-y-1 pt-4 border-t border-black/5">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Seniority Signal</p>
-            <p className="text-[13px] text-slate-800 font-medium">{analysis.resumeInsights.seniority}</p>
-          </div>
-          <div className="space-y-1 pt-4 border-t border-black/5">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Focus Score</p>
-            <div className="flex items-center gap-3">
-              <span className="text-[20px] font-semibold text-slate-900">{analysis.resumeInsights.focusScore}</span>
-              <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-sky-500"
-                  style={{ width: `${analysis.resumeInsights.focusScore}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </GlassCard>
-
-        <GlassCard className="space-y-4">
-          <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Red Flags</p>
-          {analysis.resumeInsights.redFlags.length > 0 ? (
-            <div className="space-y-3">
-              {analysis.resumeInsights.redFlags.map((flag, i) => (
-                <div key={i} className="flex gap-3 p-3 rounded-xl bg-red-50/30 border border-red-100/50">
-                  <AlertCircle size={14} className="text-red-400 mt-0.5" />
-                  <p className="text-[12px] text-red-700 leading-relaxed">{flag}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[12px] text-slate-400 italic">No major red flags detected.</p>
-          )}
-        </GlassCard>
-      </div>
-    );
-  };
-
-  const renderTodos = () => {
-    if (!analysis) return null;
-    const columns: { id: TodoStatus; label: string }[] = [
-      { id: 'to-fix', label: 'To Fix' },
-      { id: 'in-progress', label: 'In Progress' },
-      { id: 'done', label: 'Done' }
-    ];
-
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in duration-500">
-        {columns.map(col => (
-          <div
-            key={col.id}
-            className="space-y-4 rounded-2xl p-2 transition-colors"
-            onDragOver={onDragOver}
-            onDrop={(e) => onDropTodo(e, col.id)}
-          >
-            <div className="flex items-center justify-between px-2">
-              <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{col.label}</h4>
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md">
-                {analysis.todos.filter(t => t.status === col.id).length}
-              </span>
-            </div>
-            <div className="space-y-3 min-h-[400px]">
-              {analysis.todos.filter(t => t.status === col.id).map(todo => (
-                <GlassCard
-                  key={todo.id}
-                  padding="p-4"
-                  className={`relative cursor-grab active:cursor-grabbing hover:border-sky-200 transition-all ${
-                    draggedTodoId === todo.id ? 'opacity-40 grayscale scale-95' : 'opacity-100'
-                  }`}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, todo.id)}
-                  onDragEnd={() => setDraggedTodoId(null)}
-                >
-                  <div className="flex gap-3">
-                    <GripVertical size={12} className="text-slate-300 mt-1 flex-shrink-0" />
-                    <div className="flex flex-col gap-3 flex-1">
-                      <p className="text-[12px] text-slate-700 leading-snug">{todo.title}</p>
-                      <div className="flex gap-2 justify-end">
-                        {col.id !== 'to-fix' && (
-                          <button
-                            onClick={() => handleTodoMove(todo.id, col.id === 'done' ? 'in-progress' : 'to-fix')}
-                            className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors"
-                          >
-                            <ChevronRight className="rotate-180" size={12} />
-                          </button>
-                        )}
-                        {col.id !== 'done' && (
-                          <button
-                            onClick={() => handleTodoMove(todo.id, col.id === 'to-fix' ? 'in-progress' : 'done')}
-                            className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors"
-                          >
-                            <ChevronRight size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </GlassCard>
-              ))}
-              {analysis.todos.filter(t => t.status === col.id).length === 0 && (
-                <div className="h-20 border border-dashed border-black/[0.05] rounded-2xl flex items-center justify-center">
-                  <span className="text-[11px] text-slate-300">Drop tasks here</span>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderHistory = () => (
-    <div className="max-w-2xl mx-auto animate-in fade-in duration-500">
-      <GlassCard className="space-y-0 p-0 overflow-hidden">
-        {history.length > 0 ? (
-          history.map((item, idx) => (
-            <div
-              key={item.id}
-              className={`flex items-center justify-between p-5 hover:bg-black/[0.01] transition-colors cursor-pointer ${
-                idx !== history.length - 1 ? 'border-b border-black/5' : ''
-              }`}
-            >
-              <div className="space-y-1">
-                <h4 className="text-[13px] font-medium text-slate-900">{item.jobTitle}</h4>
-                <p className="text-[11px] text-slate-400">{item.date}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className={`text-[13px] font-semibold ${item.score > 70 ? 'text-emerald-600' : 'text-slate-600'}`}>
-                    {item.score}%
-                  </span>
-                  <p className="text-[10px] text-slate-400">Match</p>
-                </div>
-                <ChevronRight size={14} className="text-slate-300" />
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="p-12 text-center text-slate-400 text-[12px]">No analysis history found.</div>
-        )}
-      </GlassCard>
-    </div>
-  );
+  const View = session ? VIEWS[tab] : null;
+  const a = session?.analysis;
 
   return (
-    <div className="min-h-screen pb-20 px-4 md:px-8 max-w-6xl mx-auto">
-      {/* Top Navigation */}
-      <nav className="flex items-center justify-between py-6 mb-12">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setAnalysis(null); setCurrentTab(AnalysisTab.Overview); }}>
-          <div className="w-6 h-6 bg-sky-600 rounded-lg flex items-center justify-center text-white shadow-sm shadow-sky-200">
-            <FileText size={14} strokeWidth={2.5} />
-          </div>
-          <span className="text-[14px] font-semibold text-slate-900 tracking-tight">Resume Match</span>
-        </div>
-
-        {analysis && (
+    <div className="min-h-screen bg-white">
+      {/* Global navigation */}
+      <header className="sticky top-0 z-40 h-11 bg-white/80 backdrop-blur-xl no-print">
+        <div className="max-w-[1024px] mx-auto h-full px-4 flex items-center justify-between">
           <button
-            onClick={() => {
-              setAnalysis(null);
-              setResumeText('');
-              setResumeFileName(null);
-              setJdText('');
-              setJdFileName(null);
-            }}
-            className="text-[11px] text-slate-400 hover:text-slate-600 font-medium transition-colors"
+            onClick={() => setSession(null)}
+            className="flex items-center gap-2 text-ink/80 hover:text-ink"
+            aria-label="Resume Match home"
           >
-            New Analysis
+            <FileText size={16} strokeWidth={2} />
+            <span className="t-caption font-semibold tracking-[-0.12px]">Resume Match</span>
           </button>
-        )}
-      </nav>
+          <nav className="flex items-center gap-6">
+            <button onClick={() => setHistoryOpen(true)} className="t-caption text-ink/80 hover:text-ink inline-flex items-center gap-1.5">
+              <Clock size={13} /> History{sessions.length ? ` (${sessions.length})` : ''}
+            </button>
+            <button onClick={() => setSettingsOpen(true)} className="t-caption text-ink/80 hover:text-ink inline-flex items-center gap-1.5">
+              <Settings2 size={13} /> {PROVIDERS[settings.provider].name}
+              {!isProviderReady(settings) && <span className="w-1.5 h-1.5 rounded-full bg-launch" />}
+            </button>
+          </nav>
+        </div>
+      </header>
 
-      {analysis ? (
+      {session && a && View ? (
         <>
-          {renderTabs()}
-          <div className="mt-8">
-            {currentTab === AnalysisTab.Overview && renderOverview()}
-            {currentTab === AnalysisTab.MatchAnalysis && renderMatchAnalysis()}
-            {currentTab === AnalysisTab.ResumeInsights && renderResumeInsights()}
-            {currentTab === AnalysisTab.Todos && renderTodos()}
-            {currentTab === AnalysisTab.History && renderHistory()}
+          {/* Product local navigation */}
+          <div className="sticky top-11 z-30 bg-white/90 backdrop-blur-xl border-b border-hairline no-print">
+            <div className="max-w-[1024px] mx-auto px-4">
+              <div className="flex items-center justify-between h-[52px] gap-4">
+                <div className="flex items-baseline gap-3 min-w-0">
+                  <p className="t-nav-title truncate">{a.jobTitle}</p>
+                  {a.company && <p className="t-caption text-slate truncate hidden sm:block">{a.company}</p>}
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="t-caption font-semibold hidden sm:inline" style={{ color: scoreColor(a.matchScore) }}>
+                    {session.rescore ? `${a.matchScore} → ${session.rescore.matchScore}` : `${a.matchScore}%`} match
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={<Download size={12} />}
+                    onClick={() => downloadText(`${slug(a.jobTitle)}-report.md`, analysisToMarkdown(a), 'text/markdown')}
+                  >
+                    <span className="hidden sm:inline">Report</span>
+                  </Button>
+                  <Button size="sm" onClick={() => setSession(null)}>
+                    New
+                  </Button>
+                </div>
+              </div>
+              <nav className="flex gap-7 overflow-x-auto no-scrollbar -mb-px" aria-label="Sections">
+                {Object.values(AnalysisTab).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    aria-current={tab === t ? 'page' : undefined}
+                    className={`py-3 text-[14px] font-medium tracking-[-0.224px] whitespace-nowrap border-b-2 transition-colors ${
+                      tab === t ? 'text-ink border-ink' : 'text-slate border-transparent hover:text-ink'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </nav>
+            </div>
           </div>
+
+          <main className="bg-mist min-h-[calc(100vh-140px)] py-10 sm:py-14 px-4">
+            <div className="max-w-[1024px] mx-auto">
+              {a.offline && (
+                <div className="mb-8 rounded-[28px] bg-white px-7 py-6 flex flex-col md:flex-row md:items-center gap-5 justify-between no-print">
+                  <div>
+                    <p className="t-label">Offline scan</p>
+                    <p className="t-body mt-1">Keyword and format checks only. Add a free AI key for the full recruiter read, rewrites, cover letters and interview prep.</p>
+                    {error && <p className="t-small text-bad mt-2">{error}</p>}
+                  </div>
+                  <div className="flex gap-3 flex-shrink-0">
+                    {isProviderReady(settings) ? (
+                      <Button loading={analyzing} onClick={() => analyze(false, session)}>Run AI analysis</Button>
+                    ) : (
+                      <Button onClick={() => setSettingsOpen(true)}>Set up free AI</Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {analyzing ? (
+                <div className="flex justify-center py-10"><AnalyzingSteps step={step} /></div>
+              ) : (
+                <View
+                  key={`${session.id}-${tab}`}
+                  session={session}
+                  update={update}
+                  goTo={setTab}
+                  reanalyze={isProviderReady(settings) ? () => analyze(false, session) : () => setSettingsOpen(true)}
+                />
+              )}
+            </div>
+          </main>
         </>
       ) : (
-        renderLanding()
+        <Landing
+          resumeText={resumeText}
+          jdText={jdText}
+          resumeFileName={resumeFileName}
+          jdFileName={jdFileName}
+          setResume={(t, f) => {
+            setResumeText(t);
+            setResumeFileName(f);
+          }}
+          setJd={(t, f) => {
+            setJdText(t);
+            setJdFileName(f);
+          }}
+          onAnalyze={() => analyze()}
+          onQuickScan={() => analyze(true)}
+          aiReady={isProviderReady(settings)}
+          analyzing={analyzing}
+          step={step}
+          error={error}
+          providerName={PROVIDERS[settings.provider].name}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       )}
+
+      <footer className="bg-mist border-t border-hairline no-print">
+        <div className="max-w-[1024px] mx-auto px-4 py-6 t-caption text-slate flex flex-col sm:flex-row gap-2 justify-between">
+          <span>Your documents are stored only in this browser and sent only to the AI provider you choose.</span>
+          <span>AI output can be wrong. Review before you send.</span>
+        </div>
+      </footer>
+
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={setSettings} />
+
+      <Sheet open={historyOpen} onClose={() => setHistoryOpen(false)} title="History">
+        {sessions.length === 0 ? (
+          <p className="t-small text-slate py-8 text-center">No analyses yet.</p>
+        ) : (
+          <div className="bg-white rounded-[20px] divide-y divide-control">
+            {sessions.map(s => (
+              <div key={s.id} className="flex items-center gap-4 px-5 py-4 group">
+                <button className="flex-1 text-left min-w-0" onClick={() => openSession(s)}>
+                  <p className="t-small font-medium truncate">{s.analysis.jobTitle}</p>
+                  <p className="t-caption text-slate truncate">
+                    {[s.analysis.company, new Date(s.createdAt).toLocaleDateString()].filter(Boolean).join(' · ')}
+                  </p>
+                </button>
+                <span className="t-small font-semibold" style={{ color: scoreColor(s.analysis.matchScore) }}>
+                  {s.analysis.matchScore}
+                </span>
+                <button
+                  aria-label="Delete"
+                  onClick={() => {
+                    setSessions(deleteSession(s.id));
+                    if (session?.id === s.id) setSession(null);
+                  }}
+                  className="text-steel hover:text-bad opacity-60 group-hover:opacity-100"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 };

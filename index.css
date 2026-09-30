@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Design tokens — see DESIGN.md (Apple-style gallery). */
+@theme {
+  --color-white: #ffffff;
+  --color-mist: #f5f5f7;
+  --color-frost: #fafafc;
+  --color-hairline: #d6d6d6;
+  --color-control: #e6e6e8;
+  --color-ink: #1d1d1f;
+  --color-slate: #707070;
+  --color-steel: #86868b;
+  --color-link: #0066cc;
+  --color-cta: #0071e3;
+  --color-cta-hover: #0077ed;
+  --color-launch: #b64400;
+  /* Muted status colors, used only for small data marks */
+  --color-good: #1d8a4e;
+  --color-warn: #b25e00;
+  --color-bad: #c9341c;
+
+  --font-display: "SF Pro Display", Inter, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-text: "SF Pro Text", Inter, "Helvetica Neue", Arial, system-ui, sans-serif;
+
+  --radius-card: 28px;
+  --radius-nav: 20px;
+  --radius-link: 10px;
+  --radius-pill: 9999px;
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body {
+    background: var(--color-white);
+    color: var(--color-ink);
+    font-family: var(--font-text);
+    font-size: 17px;
+    line-height: 1.47;
+    letter-spacing: -0.374px;
+  }
+  ::selection { background: rgba(0, 113, 227, 0.18); }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--color-cta); outline-offset: 2px; }
+}
+
+@layer components {
+  .t-hero { font-family: var(--font-display); font-weight: 600; font-size: clamp(44px, 8vw, 80px); line-height: 1.05; letter-spacing: -0.015em; }
+  .t-heading { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 4vw, 40px); line-height: 1.1; letter-spacing: 0; }
+  .t-title { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.17; letter-spacing: 0.009em; }
+  .t-kicker { font-family: var(--font-display); font-weight: 600; font-size: 21px; line-height: 1.19; letter-spacing: 0.231px; }
+  .t-nav-title { font-family: var(--font-display); font-weight: 600; font-size: 19px; line-height: 1.21; letter-spacing: 0.228px; }
+  .t-body { font-size: 17px; line-height: 1.47; letter-spacing: -0.374px; }
+  .t-small { font-size: 14px; line-height: 1.43; letter-spacing: -0.224px; }
+  .t-caption { font-size: 12px; line-height: 1.33; letter-spacing: -0.12px; }
+  .t-label { font-size: 12px; line-height: 1.33; letter-spacing: -0.12px; font-weight: 600; color: var(--color-launch); }
+
+  .field {
+    width: 100%;
+    background: var(--color-white);
+    border: 1px solid var(--color-steel);
+    border-radius: 16px;
+    padding: 14px 18px;
+    font-size: 15px;
+    line-height: 1.47;
+    letter-spacing: -0.24px;
+    color: var(--color-ink);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field:focus { border-color: var(--color-cta); box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15); }
+  .field::placeholder { color: var(--color-steel); }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.animate-fade-up { animation: fade-up .5s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes blink { 50% { opacity: 0; } }
+.caret::after { content: ""; display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--color-ink); animation: blink 1s steps(1) infinite; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { font-size: 12px; }
+}

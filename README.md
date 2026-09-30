@@ -20,50 +20,80 @@ Resume Match analyzes the relationship between a resume and a job description an
 
 This allows users to refine their resume with intention rather than guesswork, increasing the likelihood that it performs well with both automated systems and human reviewers.
 
-## Technologies Used
+## Features
 
-The project is built using a modern frontend stack chosen for reliability, performance, and maintainability.
+**Analysis (multi-step, grounded)**
+1. The resume is parsed into sections, entries and bullets, each with a stable id.
+2. The job description is turned into 8–16 weighted requirements (must-have vs nice-to-have).
+3. Every requirement is judged met / partial / missing, citing the exact bullets as evidence. A "met" without a valid citation is automatically downgraded.
+4. The AI proposes 8–14 concrete edits tied to specific bullets: rewrites, new bullets, removals, a targeted summary and skills lines.
 
-React is used to build the interface and manage application state in a clear and modular way. TypeScript adds an extra layer of safety and clarity by enforcing strong typing throughout the codebase, making the application easier to scale and maintain. Vite was selected as the build tool because of its speed and efficient development workflow. Standard HTML and CSS are used to structure the layout and create a responsive, user-friendly design.
+The match score comes from weighted requirement coverage (70%) blended with a holistic recruiter read (30%), so it is explainable and moves when you edit. Any edit that adds a number not in your original resume, contains an `[X]` placeholder or adds a new claim is flagged for you to confirm.
 
-## Project Structure and Approach
+Also included: section scores, seniority (you vs. the role), red flags, experience relevance, an offline ATS keyword scan and a resume health check.
 
-The codebase is organized to keep logic, components, and utilities clearly separated. Reusable components handle the interface, while helper functions and services manage data processing. This structure makes it easy to add new features or improve existing ones without introducing unnecessary complexity.
+**Resume editor**
+- Accept, skip or tweak each AI edit and watch it apply to your resume live. Undo any of them.
+- "Accept safe edits" applies every edit that adds no unverified claims.
+- Click any line to edit it yourself, add or delete bullets.
+- Tell the AI what to change in plain language ("tighten to one page", "emphasize leadership"), with undo.
+- Re-score the edited resume against the same requirements to see before → after.
+- Export to PDF (print), Word (.docx), Markdown or plain text.
 
-The overall approach focuses on clarity, simplicity, and long-term usability rather than overengineering.
+**Writing, interview and coaching**
+- Cover letters by tone and length; LinkedIn profile, recruiter outreach, thank-you note, elevator pitch
+- Bullet rewriter with four styles
+- Eight predicted interview questions with answer outlines; practice by typing or speaking and get graded
+- Career coach chat that has read your resume, the job and the analysis
+- Action plan board with "Draft this fix"; full history saved in the browser; Markdown report export
+
+## AI setup
+
+### Built-in AI (default, no setup for visitors)
+
+The site calls its own `/api/ai` endpoint, which forwards to OpenRouter using a key stored **only on the server**. Visitors never see the key.
+
+1. Create a key at https://openrouter.ai/keys. Set a credit limit on it.
+2. Local: put `OPENROUTER_API_KEY=...` in `.env` and restart `npm run dev`.
+3. Vercel: Project → Settings → Environment Variables → add `OPENROUTER_API_KEY`, then redeploy.
+
+By default it uses free models (`qwen/qwen3.8-27b:free`, then `google/gemma-4-31b-it:free`, then `openrouter/free`). Free models on OpenRouter are limited to about 50 requests per day per account, or about 1000 per day once the account has bought at least $10 of credits. One analysis uses 4 requests. For more headroom, set `OPENROUTER_MODELS` to a paid model; see `.env.example`.
+
+The proxy only accepts requests from the site's own origin, rate limits each visitor IP, caps output tokens and ignores any model the browser asks for.
+
+### Bring your own key
+
+Visitors can also pick Google Gemini, Groq, OpenRouter or Pollinations in **Settings** and paste their own free key. Those keys stay in the visitor's browser. With fallback on, a failing provider hands off to the next configured one.
+
+## Technologies
+
+React 19, TypeScript, Vite 6 and Tailwind CSS v4. The visual design follows `DESIGN.md`-style tokens: a white gallery canvas, `#f5f5f7` bands, 28px shadowless cards and compact blue pill controls. PDF and DOCX parsing (pdf.js, mammoth) is lazy-loaded on first upload.
+
+```
+api/ai.ts             Vercel function for the built-in AI
+server/proxy.ts       proxy logic shared by Vercel and the dev server (key stays server-side)
+services/ai.ts        provider-agnostic client: retries, streaming, fallback, JSON repair
+services/analysis.ts  multi-step analysis pipeline, re-scoring and AI resume edits
+services/features.ts  cover letters, interview prep, coach and other writers
+utils/resumeDoc.ts    structured resume: apply/undo edits, PDF/DOCX/Markdown export
+utils/ats.ts          offline keyword scan, health checks, offline analysis
+views/                one file per workspace tab (Editor.tsx is the resume editor)
+```
 
 ## Setup
 
-1. Install dependencies:
 ```bash
 npm install
-```
-
-2. Create a `.env` file in the root directory with your Gemini API key:
-```
-GEMINI_API_KEY=your_api_key_here
-```
-
-Get your API key from: https://aistudio.google.com/apikey
-
-3. Start the development server:
-```bash
 npm run dev
 ```
 
-## Features
-
-- Resume and job description analysis
-- Match score calculation
-- Skill alignment analysis
-- Experience relevance feedback
-- Actionable improvement todos
-- Resume insights and red flags detection
+Add `OPENROUTER_API_KEY` to `.env` (see `.env.example`), then open http://localhost:3000.
 
 ## Troubleshooting
 
-If you encounter "Analysis failed" errors:
-1. Check that your `.env` file exists and contains a valid `GEMINI_API_KEY`
-2. Check the browser console for detailed error messages
-3. Ensure your API key has access to Gemini models
-4. Verify that both resume and job description text are provided
+- **"built-in AI is not configured"**: set `OPENROUTER_API_KEY` on the server (`.env` locally, Environment Variables on Vercel) and restart or redeploy.
+- **"needs an API key"**: open Settings and paste a key for the selected provider.
+- **401 / 403**: the key is wrong or revoked. Use **Test connection** in Settings.
+- **402 / 429**: you hit a free-tier limit. Wait a minute, or add a second provider and enable fallback.
+- **Model not found**: providers rename models. Set a current model name in Settings.
+- **Scanned PDFs** have no text layer. Paste the text instead.

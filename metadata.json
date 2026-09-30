@@ -1,5 +1,5 @@
 {
   "name": "Resume Match",
-  "description": "A minimalist, glassy resume-job matching app that provides high-precision AI feedback on professional identity and role alignment.",
-  "requestFramePermissions": []
+  "description": "AI resume analysis, ATS keyword scan, tailored rewrites, cover letters, interview practice and career coaching.",
+  "requestFramePermissions": ["microphone"]
 }
